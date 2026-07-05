@@ -369,6 +369,7 @@ La decisión de producción es **API de Claude (Anthropic)**, modelo `claude-son
 | PDF de sesión falla con `PermissionError ... .ttf` (Windows) | El monkeypatch de xhtml2pdf (sección 11.7) fue removido. Restaurarlo. |
 | `UnicodeEncodeError ... charmap` | Falta el reconfigure de UTF-8 al inicio del script (sección 11.8). |
 | La API de Odoo dejó de responder de un día para otro | Puede ser el cierre del plan gratuito (sección 11.9). Verificar con `test_connection.py`; si rebota consistentemente, migrar a Community self-hosted. |
+| La generación con IA falla de golpe (antes andaba) con error de autenticación/permiso | **Probable: Google revocó la key de Gemini.** Como el `.env` de prueba está público en este repo, Google puede detectar la key filtrada y deshabilitarla automáticamente en cualquier momento. Verificar en [AI Studio](https://aistudio.google.com/apikey); si está revocada, generar una nueva y reemplazarla en el `.env`. Lo mismo aplica a la key de Odoo si alguien la rotó. |
 
 ---
 
