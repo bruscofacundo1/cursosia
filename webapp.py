@@ -29,7 +29,7 @@ load_dotenv()
 from flask import Flask, redirect, render_template_string, request  # noqa: E402
 
 from pipeline.extract import extract_chunks  # noqa: E402
-from pipeline.generate import generate_course  # noqa: E402
+from pipeline.generate import generate_course, regenerate_session  # noqa: E402
 from pipeline.loader import load_course  # noqa: E402
 from pipeline.preview import write_preview  # noqa: E402
 
@@ -165,9 +165,29 @@ def index():
 {resume_btn}<form action="/reset" method="post" style="display:inline"><button class="btn gray">Volver a empezar</button></form>""")
 
     if state == "review":
+        # Session list for the per-session regeneration form.
+        course = json.loads(Path(JOB["json_path"]).read_text(encoding="utf-8"))
+        session_options = "".join(
+            f'<option value="{s["number"]}">Sesión {s["number"]}: {s["title"][:70]}</option>'
+            for s in sorted(course["structure"]["sessions"], key=lambda s: s["number"])
+        )
+        can_regen = bool(course.get("chunks"))
+        regen_block = ""
+        if can_regen:
+            regen_block = f"""
+  <details style="margin-top:14px">
+    <summary style="cursor:pointer;color:#9B55A7;font-weight:bold">¿Una sesión no te convence? Regenerala con feedback</summary>
+    <form action="/regenerar" method="post" style="margin-top:8px">
+      <select name="sesion" style="padding:6px;border:1px solid #ccc;border-radius:6px;max-width:100%">{session_options}</select>
+      <textarea name="feedback" rows="3" style="width:100%;margin-top:8px;padding:8px;border:1px solid #ccc;border-radius:6px"
+        placeholder="Ej: más ejemplos prácticos y menos teoría; simplificar el lenguaje; el quiz es demasiado fácil..."></textarea>
+      <button class="btn" type="submit">Regenerar esta sesión</button>
+      <small style="display:block;margin-top:4px">Solo se regenera la sesión elegida (rápido); el resto del curso no cambia.</small>
+    </form>
+  </details>"""
         return _render(f"""
 <div class="card">
-  <h3>✓ Curso generado: {JOB['title']}</h3>
+  <h3>✓ Curso generado: {JOB['title']}</h3>{regen_block}
   <p>Revisá el contenido abajo (lecciones, quizzes y puntos "(a confirmar)"). Si está bien, cargalo en Odoo.</p>
   <form action="/cargar" method="post" enctype="multipart/form-data">
     <label>Material complementario <small>(opcional, PDFs — van como sección final descargable)</small></label>
@@ -255,6 +275,29 @@ def cargar():
     publish = bool(request.form.get("publicar"))
     force = bool(request.form.get("force"))
     threading.Thread(target=_run_load, args=(publish, force), daemon=True).start()
+    return redirect("/")
+
+
+def _run_regeneration(session_number: int, feedback: str | None) -> None:
+    try:
+        course = json.loads(Path(JOB["json_path"]).read_text(encoding="utf-8"))
+        with contextlib.redirect_stdout(_LogWriter()):
+            course = regenerate_session(course, session_number, feedback, output_dir=OUTPUT_DIR)
+            preview_path = write_preview(course, OUTPUT_DIR)
+        JOB.update(state="review", preview_path=str(preview_path))
+    except Exception as exc:  # noqa: BLE001
+        JOB.update(state="error", error=f"{exc}\n\n{traceback.format_exc()}")
+
+
+@app.post("/regenerar")
+def regenerar():
+    if JOB["state"] != "review" or not JOB.get("json_path"):
+        return redirect("/")
+    session_number = int(request.form["sesion"])
+    feedback = request.form.get("feedback", "").strip() or None
+    JOB["state"] = "running"
+    JOB["log"].append(f"→ Regenerando sesión {session_number}" + (" con feedback del revisor..." if feedback else "..."))
+    threading.Thread(target=_run_regeneration, args=(session_number, feedback), daemon=True).start()
     return redirect("/")
 
 

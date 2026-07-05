@@ -38,7 +38,7 @@ Este pipeline lo hace en minutos:
 PDF(s) fuente
    │
    ▼
-Extracción de texto (PyMuPDF)
+Extracción de texto con chunking estructural (PyMuPDF, corta por artículos/secciones)
    │
    ▼
 IA — Pasada 1: diseña la estructura del curso (título, sesiones, temas)
@@ -184,7 +184,7 @@ y abrir **http://localhost:8000** en el navegador. El flujo:
 
 1. **Formulario**: subir PDF(s) fuente + título tentativo (opcional) + imagen de portada del curso (opcional)
 2. **Progreso en vivo**: la página se actualiza sola mostrando los logs (extrayendo, generando sesión 2/4, etc.)
-3. **Revisión**: preview completo embebido (lecciones como van a quedar, quizzes con las respuestas correctas en verde, puntos "(a confirmar)" destacados) + opciones de carga: subir **material complementario** (PDFs extra que van como sección final descargable), incluir el/los PDF(s) fuente originales (marcado por defecto), *publicar directo* (si no, queda borrador) y *reemplazar si ya existe*
+3. **Revisión**: preview completo embebido (lecciones como van a quedar, quizzes con las respuestas correctas en verde, puntos "(a confirmar)" destacados) + opciones de carga: subir **material complementario** (PDFs extra que van como sección final descargable), incluir el/los PDF(s) fuente originales (marcado por defecto), *publicar directo* (si no, queda borrador) y *reemplazar si ya existe*. Y si una sesión no convence: **"Regenerala con feedback"** — elegís la sesión, escribís qué cambiar ("más ejemplos prácticos", "simplificar el lenguaje") y se regenera SOLO esa sesión sin tocar el resto
 4. **Carga**: botón "Cargar en Odoo" → al terminar da el link directo al backend de eLearning
 
 ⚠️ Es una herramienta **local y mono-usuario** (un curso a la vez, sin login). Es también el molde del futuro servicio en Railway: la versión cloud le pondrá autenticación al mismo flujo.
@@ -231,6 +231,8 @@ El JSON además: se **checkpointea después de cada sesión** (una falla a mitad
 ```bash
 python scripts/test_connection.py   # ¿la API de Odoo responde? (authenticate/read/create/unlink)
 python scripts/fields_get.py        # introspección del modelo de datos de la instancia
+python scripts/reporte_avance.py    # reporte de avance: inscriptos, finalización,
+                                    # cuellos de botella por lección, intentos de quiz
 ```
 
 ---
@@ -297,7 +299,12 @@ cursosia/
 │
 ├── pipeline/            El corazón:
 │   ├── extract.py       PDF → lista de fragmentos de texto con ID (PyMuPDF).
-│   │                    Trocea de a 3 páginas. Detecta PDFs escaneados y avisa.
+│   │                    Chunking ESTRUCTURAL: detecta títulos por tipografía y
+│   │                    marcadores ("Artículo 12", "CAPÍTULO III") y corta por
+│   │                    unidad semántica; cae a chunking por páginas si el
+│   │                    documento no tiene estructura. Detecta escaneados.
+│   ├── verify.py        Verificador de citas: valida cada "art. X"/"pág. N"
+│   │                    del contenido generado contra el material fuente.
 │   ├── generate.py      Llamadas a la IA (pasada 1 y 2) + validación + reintento.
 │   │                    Acá vive el switch Claude/Gemini (LLM_PROVIDER).
 │   ├── prompts.py       Los system prompts en español de ambas pasadas. Las

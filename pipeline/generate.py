@@ -155,7 +155,12 @@ def generate_structure(chunks: list[dict], title_hint: str | None = None) -> dic
     return structure
 
 
-def generate_session(structure: dict, session: dict, chunks_by_id: dict[str, dict]) -> dict:
+def generate_session(
+    structure: dict,
+    session: dict,
+    chunks_by_id: dict[str, dict],
+    feedback: str | None = None,
+) -> dict:
     n = session["number"]
     print(f"→ Pass 2: generating session {n}/{len(structure['sessions'])}: {session['title']}...")
 
@@ -172,6 +177,11 @@ def generate_session(structure: dict, session: dict, chunks_by_id: dict[str, dic
         f"Temas: {', '.join(session['topics'])}\n\n"
         f"MATERIAL FUENTE ASIGNADO A ESTA SESIÓN:\n\n{chunks_as_prompt_block(session_chunks)}"
     )
+    if feedback:
+        user += (
+            f"\n\nFEEDBACK DEL REVISOR HUMANO sobre una versión anterior de esta sesión "
+            f"(OBLIGATORIO tenerlo en cuenta al generar, sin romper las reglas de fidelidad):\n{feedback}"
+        )
 
     content = _call_validated(
         SESSION_SYSTEM_PROMPT,
@@ -190,6 +200,42 @@ def generate_session(structure: dict, session: dict, chunks_by_id: dict[str, dic
     print(f"  ✓ Session {n}: {len(content['quiz'])} quiz question(s), "
           f"{len(content.get('unconfirmed_points', []))} point(s) flagged '(a confirmar)'.")
     return content
+
+
+def regenerate_session(
+    course: dict,
+    session_number: int,
+    feedback: str | None = None,
+    *,
+    output_dir: Path | None = None,
+) -> dict:
+    """Re-generate ONE session (optionally guided by reviewer feedback) and
+    replace it in the course dict. Needs the chunks stored in the course JSON."""
+    chunks = course.get("chunks")
+    if not chunks:
+        raise RuntimeError(
+            "Este JSON no tiene los fragmentos fuente guardados (formato viejo): "
+            "regenerá el curso completo desde el PDF para poder usar esta función."
+        )
+    chunks_by_id = {c["chunk_id"]: c for c in chunks}
+    session_struct = next(
+        (s for s in course["structure"]["sessions"] if s["number"] == session_number), None
+    )
+    if session_struct is None:
+        raise ValueError(f"No existe la sesión {session_number} en la estructura del curso.")
+
+    new_content = generate_session(course["structure"], session_struct, chunks_by_id, feedback=feedback)
+
+    idx = next(
+        (i for i, s in enumerate(course["sessions"]) if s.get("session_number") == session_number),
+        session_number - 1,
+    )
+    course["sessions"][idx] = new_content
+
+    if output_dir:
+        path = output_dir / f"{course_slug(course['structure']['title'])}.json"
+        path.write_text(json.dumps(course, ensure_ascii=False, indent=2), encoding="utf-8")
+    return course
 
 
 def course_slug(title: str) -> str:
