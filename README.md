@@ -136,7 +136,9 @@ python main.py input/mi_material.pdf --dry-run
 
 ## 4. Configuración (.env explicado variable por variable)
 
-El archivo `.env` (copiado de `.env.example`) **nunca se sube al repo** (está en `.gitignore`). Contiene:
+> ⚠️ **Estado actual del repo:** el `.env` con credenciales **de prueba** está commiteado a propósito para que el proyecto funcione clonando y ya (`pip install -r requirements.txt` y listo). Son una instancia Odoo de demo y una key de Gemini descartables. **Cuando esto pase a producción:** borrar el `.env` del repo (`git rm --cached .env`), rotar ambas keys, y volver al esquema normal donde cada uno completa su `.env` local desde `.env.example`.
+
+El archivo `.env` contiene:
 
 ```ini
 # ── Odoo ──────────────────────────────────────────────
