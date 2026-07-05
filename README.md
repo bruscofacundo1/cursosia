@@ -136,7 +136,12 @@ python main.py input/mi_material.pdf --dry-run
 
 ## 4. Configuración (.env explicado variable por variable)
 
-> ⚠️ **Estado actual del repo:** el `.env` con credenciales **de prueba** está commiteado a propósito para que el proyecto funcione clonando y ya (`pip install -r requirements.txt` y listo). Son una instancia Odoo de demo y una key de Gemini descartables. **Cuando esto pase a producción:** borrar el `.env` del repo (`git rm --cached .env`), rotar ambas keys, y volver al esquema normal donde cada uno completa su `.env` local desde `.env.example`.
+> ⚠️ **Setup casi plug-and-play:** el `.env.example` ya trae las credenciales reales de la **instancia Odoo de prueba** (funcionan tal cual). Lo ÚNICO que tenés que conseguir es tu propia key de Gemini — es gratis y tarda 10 segundos en [AI Studio](https://aistudio.google.com/apikey). ¿Por qué no viene incluida? Lo intentamos: Google escanea los repos públicos y **revocó la key en menos de una hora**. Cualquier key de Gemini publicada muere sola; la de Odoo no tiene ese mecanismo y por eso sí puede venir en el repo.
+>
+> ```bash
+> cp .env.example .env      # Windows: copy .env.example .env
+> # abrir .env y pegar tu key en GEMINI_API_KEY=
+> ```
 
 El archivo `.env` contiene:
 
