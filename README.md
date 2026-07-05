@@ -66,6 +66,7 @@ El material es normativa técnica donde **inventar contenido es inaceptable**. P
 - **Generación en 2 pasadas, nunca todo junto**: cada sesión se genera en una llamada separada que recibe *únicamente* los fragmentos del material fuente asignados a esa sesión. El modelo escribe "con el material adelante", lo que minimiza alucinaciones.
 - **Reglas duras en los prompts**: no afirmar nada que no esté en el material; citar artículo/sección de la norma cuando aplique; si el material no cubre algo, marcarlo **"(a confirmar)"** en vez de inventarlo.
 - **Los puntos "(a confirmar)" se destacan en amarillo** al tope del preview: son lo primero que el revisor humano debe verificar.
+- **Verificador automático de citas**: después de generar cada sesión, el pipeline extrae las citas del contenido ("según el art. 12...", "pág. 4") y las busca en el material fuente asignado. Las que no aparecen se marcan como "(a confirmar)" — el revisor pasa de "desconfiar de todo" a "revisar lo señalado".
 - **Revisión humana obligatoria por defecto**: el curso se carga como NO publicado y hay una pausa de confirmación antes de cargar.
 
 ---
@@ -213,7 +214,7 @@ python main.py --from-json output/x.json --force --portada input/foto.png --publ
 |---|---|
 | `--titulo "X"` | Sugerencia de título para la IA (opcional; si falta, decide ella) |
 | `--dry-run` | Genera + preview, **no toca Odoo** |
-| `--from-json ruta.json` | Carga un JSON ya generado (salta la generación por completo) |
+| `--from-json ruta.json` | Carga un JSON ya generado. Si el JSON está incompleto (generación interrumpida), **reanuda automáticamente** desde la última sesión completada |
 | `--portada imagen.png` | Imagen de tarjeta del curso en el catálogo (PNG/JPG) |
 | `--publicar` | Publica el curso al cargarlo (default: queda **borrador**) |
 | `--force` | Si existe un curso con el mismo nombre, lo borra y recrea |
@@ -222,6 +223,8 @@ python main.py --from-json output/x.json --force --portada input/foto.png --publ
 | `--skip-review` | Salta la pausa de confirmación humana (usar con criterio) |
 
 **El JSON intermedio es oro**: cada generación guarda `output/<slug>.json` con el curso completo. Regenerar cuesta tokens y da resultados distintos; recargar desde JSON es gratis y reproducible.
+
+El JSON además: se **checkpointea después de cada sesión** (una falla a mitad de camino pierde como máximo una sesión — se reanuda con `--from-json` o el botón "Reanudar" de la webapp), guarda los **fragmentos fuente** (para reanudar sin los PDFs) y un bloque **`metadata`** con proveedor, modelo y fecha de generación (trazabilidad para iterar prompts).
 
 ### Scripts auxiliares
 
@@ -238,9 +241,9 @@ Por cada curso, vía XML-RPC contra estos modelos de `website_slides`:
 
 | Modelo Odoo | Qué es | Qué crea el pipeline |
 |---|---|---|
-| `slide.channel` | El curso | 1 registro: título, descripción HTML con objetivos, `channel_type='training'`, `enroll='invite'`, borrador salvo `--publicar`, portada opcional (`image_1920`) |
+| `slide.channel` | El curso | 1 registro: título, descripción HTML con objetivos, `channel_type='training'`, `enroll='invite'`, borrador salvo `--publicar`, portada opcional (`image_1920`), **tags de catálogo** (`tag_ids`, generados por la IA, grupo "Temas") |
 | `slide.slide` con `is_category=True` | Separador de sección | 1 por sesión: "Sesión N: Título" |
-| `slide.slide` categoría `article` | La lección | 1 por sesión: HTML brandeado en `html_content` |
+| `slide.slide` categoría `article` | La lección | 1 por sesión: HTML brandeado en `html_content` + duración estimada (`completion_time`). El quiz completo se crea **anidado en la misma llamada** (comandos one2many): 1 RPC por lección en vez de ~25 |
 | `slide.slide` categoría `document` | Material de estudio | 1 por sesión: PDF brandeado en `binary_content` (base64), descargable |
 | `slide.slide` categoría `document` | Material complementario | Opcional: PDFs extra del usuario (y/o los PDFs fuente originales) en una sección final |
 | `slide.question` | Pregunta de quiz | 4-6 por sesión, **colgadas directamente del slide artículo** (Odoo muestra el quiz al final de la lección; verificado en saas-19.3, no hace falta slide separado) |

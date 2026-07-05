@@ -22,7 +22,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 load_dotenv()
 
 from pipeline.extract import extract_chunks          # noqa: E402
-from pipeline.generate import generate_course        # noqa: E402
+from pipeline.generate import course_slug, generate_course, is_course_complete  # noqa: E402
 from pipeline.loader import load_course               # noqa: E402
 from pipeline.preview import write_preview            # noqa: E402
 
@@ -49,6 +49,11 @@ def main() -> int:
     if args.from_json:
         course = json.loads(args.from_json.read_text(encoding="utf-8"))
         print(f"✓ Loaded course JSON from {args.from_json}")
+        if not is_course_complete(course):
+            done = len(course.get("sessions", []))
+            total = len(course["structure"]["sessions"])
+            print(f"⚠️  Incomplete JSON ({done}/{total} sessions) — resuming generation...")
+            course = generate_course([], resume=course, output_dir=OUTPUT_DIR)
     else:
         if not args.pdfs:
             parser.error("Provide at least one PDF (or --from-json).")
@@ -57,12 +62,10 @@ def main() -> int:
                 parser.error(f"File not found: {p}")
 
         chunks = extract_chunks(args.pdfs)
-        course = generate_course(chunks, title_hint=args.titulo)
-
-        OUTPUT_DIR.mkdir(exist_ok=True)
-        slug = "".join(c if c.isalnum() else "_" for c in course["structure"]["title"].lower())[:60]
-        json_path = OUTPUT_DIR / f"{slug}.json"
-        json_path.write_text(json.dumps(course, ensure_ascii=False, indent=2), encoding="utf-8")
+        # generate_course checkpoints the JSON after every session; a mid-run
+        # failure loses at most one session (re-run with --from-json to resume).
+        course = generate_course(chunks, title_hint=args.titulo, output_dir=OUTPUT_DIR)
+        json_path = OUTPUT_DIR / f"{course_slug(course['structure']['title'])}.json"
         print(f"✓ Course JSON saved: {json_path} (re-load later with --from-json)")
 
     preview_path = write_preview(course, OUTPUT_DIR)

@@ -66,22 +66,21 @@ class _LogWriter(io.TextIOBase):
         return len(s)
 
 
-def _run_generation(pdf_paths: list[Path], title_hint: str | None) -> None:
+def _run_generation(pdf_paths: list[Path], title_hint: str | None, resume: dict | None = None) -> None:
     try:
         # redirect_stdout is process-wide, acceptable: single-job local tool.
+        # on_checkpoint records the JSON path as soon as it exists, so a
+        # mid-run failure can be resumed from the review of the error screen.
         with contextlib.redirect_stdout(_LogWriter()):
-            chunks = extract_chunks(pdf_paths)
-            course = generate_course(chunks, title_hint=title_hint)
-
-            OUTPUT_DIR.mkdir(exist_ok=True)
-            title = course["structure"]["title"]
-            slug = "".join(c if c.isalnum() else "_" for c in title.lower())[:60]
-            json_path = OUTPUT_DIR / f"{slug}.json"
-            json_path.write_text(json.dumps(course, ensure_ascii=False, indent=2), encoding="utf-8")
-
+            chunks = [] if resume else extract_chunks(pdf_paths)
+            course = generate_course(
+                chunks, title_hint=title_hint,
+                output_dir=OUTPUT_DIR, resume=resume,
+                on_checkpoint=lambda p: JOB.update(json_path=str(p)),
+            )
             preview_path = write_preview(course, OUTPUT_DIR)
 
-        JOB.update(state="review", title=title, json_path=str(json_path), preview_path=str(preview_path))
+        JOB.update(state="review", title=course["structure"]["title"], preview_path=str(preview_path))
     except Exception as exc:  # noqa: BLE001
         JOB.update(state="error", error=f"{exc}\n\n{traceback.format_exc()}")
 
@@ -155,9 +154,15 @@ def index():
         return _render(f"<div class='card'><b>⏳ {msg}</b> <small>(esta página se actualiza sola)</small>{log_html}</div>", auto_refresh=True)
 
     if state == "error":
+        resume_btn = ""
+        if JOB.get("json_path"):
+            resume_btn = (
+                "<form action='/reanudar' method='post' style='display:inline'>"
+                "<button class='btn'>Reanudar generación (retoma donde falló)</button></form> "
+            )
         return _render(f"""
 <div class="err"><b>Falló:</b>\n{JOB['error']}</div>{log_html}
-<form action="/reset" method="post"><button class="btn gray">Volver a empezar</button></form>""")
+{resume_btn}<form action="/reset" method="post" style="display:inline"><button class="btn gray">Volver a empezar</button></form>""")
 
     if state == "review":
         return _render(f"""
@@ -250,6 +255,18 @@ def cargar():
     publish = bool(request.form.get("publicar"))
     force = bool(request.form.get("force"))
     threading.Thread(target=_run_load, args=(publish, force), daemon=True).start()
+    return redirect("/")
+
+
+@app.post("/reanudar")
+def reanudar():
+    """Resume a failed generation from its last checkpoint (also re-runs the
+    final steps if generation itself had finished but e.g. the preview failed)."""
+    if JOB["state"] != "error" or not JOB.get("json_path"):
+        return redirect("/")
+    partial = json.loads(Path(JOB["json_path"]).read_text(encoding="utf-8"))
+    JOB.update(state="running", error=None)
+    threading.Thread(target=_run_generation, args=([], None, partial), daemon=True).start()
     return redirect("/")
 
 

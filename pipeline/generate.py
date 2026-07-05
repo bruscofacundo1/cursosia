@@ -14,6 +14,9 @@ import os
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
+from pathlib import Path
+from typing import Callable
 
 import anthropic
 from jsonschema import Draft202012Validator
@@ -25,6 +28,7 @@ from .schemas import (
     SESSION_CONTENT_SCHEMA,
     validate_exactly_one_correct,
 )
+from .verify import verify_citations
 
 PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
@@ -176,21 +180,82 @@ def generate_session(structure: dict, session: dict, chunks_by_id: dict[str, dic
         MAX_TOKENS_SESSION,
         extra_checks=validate_exactly_one_correct,
     )
+
+    # Anti-hallucination net #2: flag citations not found in the source chunks.
+    citation_flags = verify_citations(content["html_content"], session_chunks)
+    if citation_flags:
+        content.setdefault("unconfirmed_points", []).extend(citation_flags)
+        print(f"  ⚠️  {len(citation_flags)} cita(s) sin verificar (marcadas para revisión).")
+
     print(f"  ✓ Session {n}: {len(content['quiz'])} quiz question(s), "
           f"{len(content.get('unconfirmed_points', []))} point(s) flagged '(a confirmar)'.")
     return content
 
 
-def generate_course(chunks: list[dict], title_hint: str | None = None) -> dict:
-    """Full generation: structure + all sessions. Returns the course JSON."""
+def course_slug(title: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in title.lower())[:60]
+
+
+def is_course_complete(course: dict) -> bool:
+    return len(course.get("sessions", [])) >= len(course["structure"]["sessions"])
+
+
+def generate_course(
+    chunks: list[dict],
+    title_hint: str | None = None,
+    *,
+    output_dir: Path | None = None,
+    resume: dict | None = None,
+    on_checkpoint: Callable[[Path], None] | None = None,
+) -> dict:
+    """Full generation: structure + all sessions. Returns the course JSON.
+
+    output_dir: if given, the course JSON is checkpointed there after the
+    structure pass and after EVERY session, so a failure mid-run loses at most
+    one session. The saved JSON includes the source chunks, so resuming needs
+    nothing but the file: pass it back as `resume`.
+    """
     active_model = GEMINI_MODEL if PROVIDER == "gemini" else MODEL
     print(f"→ LLM provider: {PROVIDER} (model {active_model})")
-    structure = generate_structure(chunks, title_hint)
+
+    if resume:
+        course = resume
+        chunks = course.get("chunks") or chunks
+        if not chunks:
+            raise RuntimeError("Cannot resume: the JSON has no stored chunks and no PDFs were given.")
+        done = len(course.get("sessions", []))
+        total = len(course["structure"]["sessions"])
+        print(f"→ Resuming '{course['structure']['title']}': {done}/{total} session(s) already generated.")
+    else:
+        structure = generate_structure(chunks, title_hint)
+        course = {
+            "metadata": {
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "provider": PROVIDER,
+                "model": active_model,
+            },
+            "structure": structure,
+            "chunks": chunks,
+            "sessions": [],
+        }
+
+    checkpoint_path: Path | None = None
+    if output_dir:
+        output_dir.mkdir(exist_ok=True)
+        checkpoint_path = output_dir / f"{course_slug(course['structure']['title'])}.json"
+
+    def _save() -> None:
+        if checkpoint_path:
+            checkpoint_path.write_text(json.dumps(course, ensure_ascii=False, indent=2), encoding="utf-8")
+            if on_checkpoint:
+                on_checkpoint(checkpoint_path)
+
+    _save()
+
     chunks_by_id = {c["chunk_id"]: c for c in chunks}
+    pending = sorted(course["structure"]["sessions"], key=lambda s: s["number"])[len(course["sessions"]):]
+    for s in pending:
+        course["sessions"].append(generate_session(course["structure"], s, chunks_by_id))
+        _save()
 
-    sessions_content = [
-        generate_session(structure, s, chunks_by_id)
-        for s in sorted(structure["sessions"], key=lambda s: s["number"])
-    ]
-
-    return {"structure": structure, "sessions": sessions_content}
+    return course

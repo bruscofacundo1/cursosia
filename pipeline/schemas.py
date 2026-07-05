@@ -8,10 +8,17 @@ Every Claude response MUST validate against its schema before moving on.
 
 COURSE_STRUCTURE_SCHEMA = {
     "type": "object",
-    "required": ["title", "description", "objectives", "sessions"],
+    "required": ["title", "description", "objectives", "sessions", "tags"],
     "additionalProperties": False,
     "properties": {
         "title": {"type": "string", "minLength": 3},
+        "tags": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 30},
+            "minItems": 2,
+            "maxItems": 4,
+            "description": "Short catalog tags for the course (Spanish), e.g. 'Seguridad', 'Normativa'.",
+        },
         "description": {
             "type": "string",
             "description": "Short course description shown on the Odoo course card (2-3 sentences, Spanish).",
@@ -48,11 +55,17 @@ COURSE_STRUCTURE_SCHEMA = {
 
 SESSION_CONTENT_SCHEMA = {
     "type": "object",
-    "required": ["session_number", "title", "html_content", "quiz"],
+    "required": ["session_number", "title", "html_content", "quiz", "estimated_minutes"],
     "additionalProperties": False,
     "properties": {
         "session_number": {"type": "integer", "minimum": 1},
         "title": {"type": "string"},
+        "estimated_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 60,
+            "description": "Estimated time to read the lesson AND answer the quiz, in minutes.",
+        },
         "html_content": {
             "type": "string",
             "minLength": 200,

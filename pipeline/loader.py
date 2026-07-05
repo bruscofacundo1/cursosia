@@ -12,11 +12,21 @@ Design:
 
 import base64
 import os
+import re
 import xmlrpc.client
 from pathlib import Path
 
 from .branding import apply_branding
 from .pdf_brand import build_session_pdf
+
+
+def _estimate_minutes(content: dict) -> int:
+    """Reading+quiz time. Uses the LLM's estimate when present; otherwise
+    derives it from word count (~200 wpm) + 30s per quiz question."""
+    if content.get("estimated_minutes"):
+        return int(content["estimated_minutes"])
+    words = len(re.sub(r"<[^>]+>", " ", content["html_content"]).split())
+    return max(5, round(words / 200 + len(content["quiz"]) * 0.5))
 
 
 class OdooClient:
@@ -95,6 +105,18 @@ def load_course(
         with open(cover_image, "rb") as fh:
             channel_vals["image_1920"] = base64.b64encode(fh.read()).decode("ascii")
 
+    # Catalog tags (optional in older course JSONs). slide.channel.tag requires
+    # a tag group; find-or-create a generic "Temas" group once.
+    tag_names = structure.get("tags") or []
+    if tag_names:
+        groups = odoo.search("slide.channel.tag.group", [["name", "=", "Temas"]])
+        group_id = groups[0] if groups else odoo.create("slide.channel.tag.group", {"name": "Temas"})
+        tag_ids = []
+        for tag_name in tag_names:
+            found = odoo.search("slide.channel.tag", [["name", "=ilike", tag_name]])
+            tag_ids.append(found[0] if found else odoo.create("slide.channel.tag", {"name": tag_name, "group_id": group_id}))
+        channel_vals["tag_ids"] = [[6, 0, tag_ids]]
+
     channel_id = odoo.create("slide.channel", channel_vals)
 
     try:
@@ -123,7 +145,26 @@ def load_course(
                 session_title=content["title"],
                 session_number=n,
             )
-            slide_id = odoo.create(
+            # Quiz nested via one2many commands: the whole lesson (slide +
+            # questions + answers) is ONE RPC call instead of ~20, and atomic.
+            # Questions attach directly to the article slide (Odoo shows the
+            # quiz at the end of the lesson; verified in saas-19.3).
+            question_commands = [
+                [0, 0, {
+                    "question": q["question"],
+                    "sequence": q_seq,
+                    "answer_ids": [
+                        [0, 0, {
+                            "text_value": a["text"],
+                            "is_correct": a["is_correct"],
+                            "comment": a.get("feedback", ""),
+                        }]
+                        for a in q["answers"]
+                    ],
+                }]
+                for q_seq, q in enumerate(content["quiz"], start=1)
+            ]
+            odoo.create(
                 "slide.slide",
                 {
                     "name": content["title"],
@@ -132,6 +173,8 @@ def load_course(
                     "html_content": branded_html,
                     "sequence": seq,
                     "is_published": publish,
+                    "completion_time": _estimate_minutes(content) / 60,  # field unit: hours
+                    "question_ids": question_commands,
                 },
             )
             seq += 1
@@ -158,24 +201,6 @@ def load_course(
                 )
                 seq += 1
 
-            # Quiz: slide.question records attached directly to the article
-            # slide (slide.slide.question_ids exists in saas-19.3; Odoo shows
-            # the quiz at the end of the lesson). No separate quiz slide.
-            for q_seq, q in enumerate(content["quiz"], start=1):
-                question_id = odoo.create(
-                    "slide.question",
-                    {"slide_id": slide_id, "question": q["question"], "sequence": q_seq},
-                )
-                for a in q["answers"]:
-                    odoo.create(
-                        "slide.answer",
-                        {
-                            "question_id": question_id,
-                            "text_value": a["text"],
-                            "is_correct": a["is_correct"],
-                            "comment": a.get("feedback", ""),
-                        },
-                    )
             print(
                 f"  ✓ Session {n} loaded ({len(content['quiz'])} quiz questions"
                 + (", branded PDF" if with_pdf else "")

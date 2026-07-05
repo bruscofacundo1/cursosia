@@ -26,8 +26,10 @@ Reglas:
 3. Ordená las sesiones de lo general a lo específico, o siguiendo el orden
    lógico de la normativa si el material es normativo.
 4. Los títulos de sesión deben ser claros y orientados al participante.
-5. NO generes contenido todavía: solo estructura.
-6. Todo en español.
+5. Incluí en "tags" 2 a 4 etiquetas temáticas CORTAS para el catálogo de cursos
+   (ej.: "Seguridad", "Normativa", "Logística"). Sustantivos, sin oraciones.
+6. NO generes contenido todavía: solo estructura.
+7. Todo en español.
 
 Respondé ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks,
 sin texto antes ni después. El JSON debe cumplir este schema:
@@ -69,6 +71,8 @@ REGLAS DE FORMATO (html_content):
   fondo suave) → cierre con puntos clave (lista).
 - Tablas HTML cuando el material tenga datos tabulares. Longitud objetivo:
   lo que una persona lee en 10-15 minutos.
+- Completá "estimated_minutes" con los minutos estimados de lectura de la
+  lección MÁS la resolución del quiz (entero, típicamente entre 10 y 25).
 
 REGLAS DEL QUIZ:
 - Entre 4 y 6 preguntas de opción múltiple que evalúen comprensión real (no
