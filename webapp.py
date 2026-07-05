@@ -49,6 +49,7 @@ def _fresh_job() -> dict:
         "state": "idle", "log": [], "error": None,
         "title": None, "json_path": None, "preview_path": None,
         "cover_path": None, "channel_id": None,
+        "source_pdfs": [], "extra_docs": [],
     }
 
 
@@ -92,6 +93,7 @@ def _run_load(publish: bool, force: bool) -> None:
             channel_id = load_course(
                 course, publish=publish, force=force,
                 cover_image=JOB["cover_path"],
+                extra_docs=JOB["extra_docs"] or None,
             )
         JOB.update(state="loaded", channel_id=channel_id)
     except Exception as exc:  # noqa: BLE001
@@ -162,12 +164,15 @@ def index():
 <div class="card">
   <h3>✓ Curso generado: {JOB['title']}</h3>
   <p>Revisá el contenido abajo (lecciones, quizzes y puntos "(a confirmar)"). Si está bien, cargalo en Odoo.</p>
-  <form action="/cargar" method="post" style="display:inline">
+  <form action="/cargar" method="post" enctype="multipart/form-data">
+    <label>Material complementario <small>(opcional, PDFs — van como sección final descargable)</small></label>
+    <input type="file" name="adjuntos" accept=".pdf" multiple>
+    <label><input type="checkbox" name="incluir_fuente" checked> Incluir el/los PDF(s) fuente originales como material complementario</label>
     <label><input type="checkbox" name="publicar"> Publicar directo (si no, queda borrador)</label>
     <label><input type="checkbox" name="force"> Reemplazar si ya existe un curso con el mismo nombre</label>
     <button class="btn" type="submit">Cargar en Odoo</button>
   </form>
-  <form action="/reset" method="post" style="display:inline; margin-left:8px">
+  <form action="/reset" method="post" style="margin-top:8px">
     <button class="btn gray" type="submit">Descartar</button>
   </form>
 </div>
@@ -204,6 +209,7 @@ def generar():
         dest = INPUT_DIR / Path(f.filename).name
         f.save(dest)
         pdf_paths.append(dest)
+    JOB["source_pdfs"] = [str(p) for p in pdf_paths]
 
     cover = request.files.get("portada")
     if cover and cover.filename:
@@ -228,6 +234,18 @@ def preview():
 def cargar():
     if JOB["state"] != "review":
         return redirect("/")
+
+    # Complementary material: uploaded PDFs + optionally the source PDFs.
+    extra_docs: list[str] = []
+    for f in request.files.getlist("adjuntos"):
+        if f.filename and f.filename.lower().endswith(".pdf"):
+            dest = INPUT_DIR / Path(f.filename).name
+            f.save(dest)
+            extra_docs.append(str(dest))
+    if request.form.get("incluir_fuente"):
+        extra_docs = JOB["source_pdfs"] + extra_docs
+    JOB["extra_docs"] = extra_docs
+
     JOB["state"] = "loading"
     publish = bool(request.form.get("publicar"))
     force = bool(request.form.get("force"))

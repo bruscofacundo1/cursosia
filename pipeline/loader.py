@@ -13,6 +13,7 @@ Design:
 import base64
 import os
 import xmlrpc.client
+from pathlib import Path
 
 from .branding import apply_branding
 from .pdf_brand import build_session_pdf
@@ -53,11 +54,14 @@ def load_course(
     force: bool = False,
     with_pdf: bool = True,
     cover_image: str | None = None,
+    extra_docs: list[str] | None = None,
 ) -> int:
     """Load a generated course JSON into Odoo. Returns the channel id.
 
     cover_image: optional path to an image file used as the course card
     picture (slide.channel.image_1920; Odoo derives the smaller sizes).
+    extra_docs: optional list of PDF paths loaded as downloadable document
+    slides under a final "Material complementario" section.
     """
     odoo = OdooClient()
     structure = course["structure"]
@@ -177,6 +181,36 @@ def load_course(
                 + (", branded PDF" if with_pdf else "")
                 + ")."
             )
+
+        # Complementary material: user-provided PDFs as a final section.
+        if extra_docs:
+            odoo.create(
+                "slide.slide",
+                {
+                    "name": "Material complementario",
+                    "channel_id": channel_id,
+                    "is_category": True,
+                    "sequence": seq,
+                },
+            )
+            seq += 1
+            for doc_path in extra_docs:
+                with open(doc_path, "rb") as fh:
+                    doc_b64 = base64.b64encode(fh.read()).decode("ascii")
+                odoo.create(
+                    "slide.slide",
+                    {
+                        "name": Path(doc_path).stem,
+                        "channel_id": channel_id,
+                        "slide_category": "document",
+                        "source_type": "local_file",
+                        "binary_content": doc_b64,
+                        "sequence": seq,
+                        "is_published": publish,
+                    },
+                )
+                seq += 1
+            print(f"  ✓ {len(extra_docs)} complementary document(s) loaded.")
 
         print(f"✓ Course loaded. Channel id: {channel_id}")
         print(f"  Backend: {odoo.url}/odoo/action-website_slides.slide_channel_action_overview")

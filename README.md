@@ -183,7 +183,7 @@ y abrir **http://localhost:8000** en el navegador. El flujo:
 
 1. **Formulario**: subir PDF(s) fuente + título tentativo (opcional) + imagen de portada del curso (opcional)
 2. **Progreso en vivo**: la página se actualiza sola mostrando los logs (extrayendo, generando sesión 2/4, etc.)
-3. **Revisión**: preview completo embebido (lecciones como van a quedar, quizzes con las respuestas correctas en verde, puntos "(a confirmar)" destacados) + dos opciones: *publicar directo* (si no, queda borrador) y *reemplazar si ya existe*
+3. **Revisión**: preview completo embebido (lecciones como van a quedar, quizzes con las respuestas correctas en verde, puntos "(a confirmar)" destacados) + opciones de carga: subir **material complementario** (PDFs extra que van como sección final descargable), incluir el/los PDF(s) fuente originales (marcado por defecto), *publicar directo* (si no, queda borrador) y *reemplazar si ya existe*
 4. **Carga**: botón "Cargar en Odoo" → al terminar da el link directo al backend de eLearning
 
 ⚠️ Es una herramienta **local y mono-usuario** (un curso a la vez, sin login). Es también el molde del futuro servicio en Railway: la versión cloud le pondrá autenticación al mismo flujo.
@@ -218,6 +218,7 @@ python main.py --from-json output/x.json --force --portada input/foto.png --publ
 | `--publicar` | Publica el curso al cargarlo (default: queda **borrador**) |
 | `--force` | Si existe un curso con el mismo nombre, lo borra y recrea |
 | `--no-pdf` | No genera los PDFs de estudio descargables |
+| `--adjuntos a.pdf b.pdf` | PDFs extra cargados como sección final "Material complementario" (ej.: la normativa original completa) |
 | `--skip-review` | Salta la pausa de confirmación humana (usar con criterio) |
 
 **El JSON intermedio es oro**: cada generación guarda `output/<slug>.json` con el curso completo. Regenerar cuesta tokens y da resultados distintos; recargar desde JSON es gratis y reproducible.
@@ -241,6 +242,7 @@ Por cada curso, vía XML-RPC contra estos modelos de `website_slides`:
 | `slide.slide` con `is_category=True` | Separador de sección | 1 por sesión: "Sesión N: Título" |
 | `slide.slide` categoría `article` | La lección | 1 por sesión: HTML brandeado en `html_content` |
 | `slide.slide` categoría `document` | Material de estudio | 1 por sesión: PDF brandeado en `binary_content` (base64), descargable |
+| `slide.slide` categoría `document` | Material complementario | Opcional: PDFs extra del usuario (y/o los PDFs fuente originales) en una sección final |
 | `slide.question` | Pregunta de quiz | 4-6 por sesión, **colgadas directamente del slide artículo** (Odoo muestra el quiz al final de la lección; verificado en saas-19.3, no hace falta slide separado) |
 | `slide.answer` | Opción de respuesta | 3-5 por pregunta: texto, `is_correct`, `comment` (feedback que ve el participante) |
 

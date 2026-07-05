@@ -39,6 +39,10 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="Replace an existing course with the same name")
     parser.add_argument("--no-pdf", action="store_true", help="Skip the branded per-session PDF slides")
     parser.add_argument("--portada", type=Path, help="Image file for the course card picture (PNG/JPG)")
+    parser.add_argument(
+        "--adjuntos", nargs="+", type=Path, default=[],
+        help="Extra PDF(s) loaded as a final 'Material complementario' section",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Generate + preview only, do not touch Odoo")
     args = parser.parse_args()
 
@@ -76,6 +80,9 @@ def main() -> int:
 
     if args.portada and not args.portada.exists():
         parser.error(f"Cover image not found: {args.portada}")
+    for doc in args.adjuntos:
+        if not doc.exists():
+            parser.error(f"Attachment not found: {doc}")
 
     load_course(
         course,
@@ -83,6 +90,7 @@ def main() -> int:
         force=args.force,
         with_pdf=not args.no_pdf,
         cover_image=str(args.portada) if args.portada else None,
+        extra_docs=[str(d) for d in args.adjuntos] or None,
     )
     return 0
 
