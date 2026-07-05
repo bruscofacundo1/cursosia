@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep
+scripts/fields_output.json
+assets/logo_pdf.png
