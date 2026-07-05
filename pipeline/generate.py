@@ -11,6 +11,8 @@ one retry with the validation errors appended. On second failure: raise.
 
 import json
 import os
+import time
+import urllib.error
 import urllib.request
 
 import anthropic
@@ -69,8 +71,21 @@ def _complete_gemini(system: str, messages: list[dict], max_tokens: int) -> str:
         data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
     )
-    with urllib.request.urlopen(req, timeout=600) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    # Free-tier Gemini throws transient 503 (overloaded) / 429 (rate limit)
+    # regularly: retry those with backoff before giving up.
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 502, 503, 504) and attempt < max_attempts:
+                wait = 8 * attempt
+                print(f"  ⚠️  Gemini devolvió {exc.code} (transitorio), reintento {attempt}/{max_attempts - 1} en {wait}s...")
+                time.sleep(wait)
+                continue
+            raise
     parts = data["candidates"][0].get("content", {}).get("parts", [])
     return "".join(p.get("text", "") for p in parts)
 
